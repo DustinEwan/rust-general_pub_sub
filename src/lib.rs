@@ -102,12 +102,24 @@ pub trait Client<TIdentifier: UniqueIdentifier, TMessage> {
 
 /// PubSubError is used for errors specific to `PubSub` (such as adding or removing `Client`s)
 #[derive(Debug)]
-pub struct PubSubError { details: String }
+pub enum PubSubError { 
+    ClientAlreadySubscribedError,
+    ClientNotSubscribedError,
+    ChannelDoesNotExistError,
+    ClientWithIdentifierAlreadyExistsError,
+    ClientDoesNotExistError
+ }
 
 impl Error for PubSubError {}
 impl std::fmt::Display for PubSubError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "{}", self.details);
+        match self {
+            Self::ClientAlreadySubscribedError => write!(f, "Client already subscribed to channel."),
+            Self::ClientNotSubscribedError => write!(f, "Client is not subscribed to channel."),
+            Self::ChannelDoesNotExistError => write!(f, "Channel does not exist."),
+            Self::ClientDoesNotExistError => write!(f, "Client does not exist."),
+            Self::ClientWithIdentifierAlreadyExistsError => write!(f, "Client with that identifier already exists.")
+        }
     }
 }
 
@@ -169,7 +181,7 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
         return if result {
             Ok(())
         } else {
-            Err(PubSubError { details: "Client already subscribed to this channel.".to_owned() })
+            Err(PubSubError::ClientAlreadySubscribedError)
         }
     }
 
@@ -179,10 +191,12 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
     /// from a `Channel` it is not subscribed to.
     pub fn unsub_client(&mut self, client: TClient, channel: String) -> Result<(), PubSubError> {
         if let Some(subbed_clients) = self.channels.get_mut(&channel) {
-            subbed_clients.remove(&client.get_id());
-            return Ok(())
+            match subbed_clients.remove(&client.get_id()) {
+                true => return Ok(()),
+                false => Err(PubSubError::ClientNotSubscribedError),
+            }
         } else {
-            Err(PubSubError { details: "Client was not subscribed to this channel.".to_owned() })
+            Err(PubSubError::ChannelDoesNotExistError)
         }
     }
 
