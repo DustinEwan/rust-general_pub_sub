@@ -174,11 +174,11 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
     /// Results in a `PubSubError` when a `Client` attempts to subscribe to a 
     /// `Channel` that it is already subscribed to.
     pub fn sub_client(&mut self, client: TClient, channel: String) -> Result<(), PubSubError> {
-        let subbed_clients = self.channels.entry(channel).or_insert(BTreeSet::new());
+        let subbed_clients = self.channels.entry(channel).or_insert_with(BTreeSet::new);
 
         let result = subbed_clients.insert(client.get_id());
 
-        return if result {
+        if result {
             Ok(())
         } else {
             Err(PubSubError::ClientAlreadySubscribedError)
@@ -192,7 +192,7 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
     pub fn unsub_client(&mut self, client: TClient, channel: String) -> Result<(), PubSubError> {
         if let Some(subbed_clients) = self.channels.get_mut(&channel) {
             match subbed_clients.remove(&client.get_id()) {
-                true => return Ok(()),
+                true => Ok(()),
                 false => Err(PubSubError::ClientNotSubscribedError),
             }
         } else {
@@ -209,5 +209,11 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
                 }
             }
         }
+    }
+}
+
+impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage: Clone> Default for PubSub<TClient, TIdentifier, TMessage> {
+    fn default() -> Self {
+        Self::new()
     }
 }
