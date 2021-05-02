@@ -15,7 +15,7 @@ impl BasicClient {
 
 impl Client<u32, String> for BasicClient {
     fn get_id(&self) -> u32 {
-        return self.id;
+        self.id
     }
 
     fn send(&self, message: &String) {
@@ -49,7 +49,7 @@ fn main() {
     }
 
     pubsub.pub_message(channel_a.clone(), &String::from("Both clients should receive this message."));
-    pubsub.pub_message(channel_b.clone(), &String::from("Only Client 1 should receive this message."));
+    pubsub.pub_message(channel_b, &String::from("Only Client 1 should receive this message."));
 
     if let Result::Err(unexpected_error) = pubsub.unsub_client(client_one, channel_a.clone()) {
         println!("This should not happen: {}", unexpected_error);
