@@ -1,8 +1,11 @@
 [package]
 name = "general_pub_sub"
-version = "0.0.01"
+version = "0.0.1"
 authors = ["Dustin Ewan <dustineewan@gmail.com>"]
 edition = "2018"
+repository = "https://github.com/DustinEwan/rust-general_pub_sub"
+license = "GPL-3.0-or-later"
+description = "A general use, fast, and flexible PubSub impnd flexible PubSub implementation"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
