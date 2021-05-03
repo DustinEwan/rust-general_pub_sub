@@ -10,3 +10,4 @@ description = "A general use, fast, and flexible PubSub impnd flexible PubSub im
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+wildmatch = "2.1.0"

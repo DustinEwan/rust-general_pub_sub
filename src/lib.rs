@@ -1,6 +1,7 @@
-use std::{collections::{ BTreeSet, HashMap }, hash::Hash};
+use std::{borrow::BorrowMut, collections::{ BTreeSet, HashMap }, hash::Hash};
 use std::error::Error;
 use std::marker::PhantomData;
+use wildmatch::WildMatch;
 
 /// A Unique Identifier
 /// 
@@ -127,9 +128,13 @@ impl std::fmt::Display for PubSubError {
 pub struct PubSub<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage> {
     clients: HashMap<TIdentifier, TClient>,
     channels: HashMap<&'a str, BTreeSet<TIdentifier>>,
+    pattern_channels: HashMap<&'a str, BTreeSet<TIdentifier>>,
     phantom: PhantomData<TMessage>
 }
 
+fn channel_is_pattern(channel: &str) -> bool {
+    channel.contains('*') || channel.contains('?')
+}
 
 /// Implementation for a `PubSub`
 /// 
@@ -149,6 +154,7 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
         PubSub {
             clients: HashMap::new(),
             channels: HashMap::new(),
+            pattern_channels: HashMap::new(),
             phantom: PhantomData
         }
     }
@@ -161,11 +167,22 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
 
     // Unsubscribes a `Client` from all `Channels` and removes the `Client` from the `PubSub`.
     pub fn remove_client(&mut self, client: TClient) {
-        let token = &client.get_id();
-        self.clients.remove(token);
+        let identifier = &client.get_id();
+        self.clients.remove(identifier);
 
         for subbed_clients in self.channels.values_mut() {
-            subbed_clients.remove(token);
+            subbed_clients.remove(identifier);
+        }
+
+        for subbed_clients in self.pattern_channels.values_mut() {
+            subbed_clients.remove(identifier);
+        }
+    }
+
+    fn get_channels_for_subscription(&mut self, channel: &'a str) -> &mut HashMap<&'a str, BTreeSet<TIdentifier>> {
+        match channel_is_pattern(channel) {
+            true => &mut self.pattern_channels,
+            false => &mut self.channels
         }
     }
 
@@ -174,7 +191,9 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
     /// Results in a `PubSubError` when a `Client` attempts to subscribe to a 
     /// `Channel` that it is already subscribed to.
     pub fn sub_client(&mut self, client: TClient, channel: &'a str) -> Result<(), PubSubError> {
-        let subbed_clients = self.channels.entry(channel).or_insert_with(BTreeSet::new);
+        let target_channels = self.get_channels_for_subscription(channel);
+
+        let subbed_clients = target_channels.entry(channel).or_insert_with(BTreeSet::new);
 
         let result = subbed_clients.insert(client.get_id());
 
@@ -189,8 +208,10 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
     /// 
     /// Results in a `PubSubError` when a `Client` attempts to unsubscribe
     /// from a `Channel` it is not subscribed to.
-    pub fn unsub_client(&mut self, client: TClient, channel: &str) -> Result<(), PubSubError> {
-        if let Some(subbed_clients) = self.channels.get_mut(channel) {
+    pub fn unsub_client(&mut self, client: TClient, channel: &'a str) -> Result<(), PubSubError> {
+        let target_channels = self.get_channels_for_subscription(channel);
+
+        if let Some(subbed_clients) = target_channels.get_mut(channel) {
             match subbed_clients.remove(&client.get_id()) {
                 true => Ok(()),
                 false => Err(PubSubError::ClientNotSubscribedError),
@@ -204,9 +225,25 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
     pub fn pub_message<TInputMessage: Into<TMessage>>(&mut self, channel: &str, msg: TInputMessage) {
         let msg_ref = msg.into();
 
+        let all_pattern_channels = self.pattern_channels.borrow_mut();
+
+        let pattern_channels = all_pattern_channels
+                                                           .keys()
+                                                           .filter(|pattern| WildMatch::new(pattern) == channel);
+            
+         for pattern in pattern_channels {
+             if let Some(subbed_clients) = all_pattern_channels.get(pattern) {
+                 for identifier in subbed_clients.iter() {
+                     if let Some(client) = self.clients.get(identifier) {
+                         client.send(msg_ref);
+                     }
+                 }
+             }
+         }
+
         if let Some(subbed_clients) = self.channels.get_mut(channel) {
-            for token in subbed_clients.iter() {
-                if let Some(client) = self.clients.get(token) {
+            for identifier in subbed_clients.iter() {
+                if let Some(client) = self.clients.get(identifier) {
                     client.send(msg_ref);
                 }
             }
