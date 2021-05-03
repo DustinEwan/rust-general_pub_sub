@@ -28,12 +28,12 @@ impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 ///   id: u32   
 /// }
 ///
-/// impl Client<u32, String> for BasicClient {
+/// impl Client<u32, &str> for BasicClient {
 ///   fn get_id(&self) -> u32 {
 ///      return self.id;
 ///   }
 ///
-///   fn send(&self, message: String) {
+///   fn send(&self, message: &str) {
 ///       println!("Client ({}) Received: {}", self.id, message); 
 ///   }
 /// }
@@ -46,27 +46,27 @@ impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 ///   id: u32
 /// }
 /// 
-/// impl Client<u32, String> for ConsoleClient {
+/// impl Client<u32, &str> for ConsoleClient {
 ///   fn get_id(&self) -> u32 {
 ///      return self.id;
 ///   }
 ///
-///   fn send(&self, message: String) {
+///   fn send(&self, message: &str) {
 ///       println!("Client ({}) Received: {}", self.id, message); 
 ///   }
 /// }
 /// 
 /// struct TcpClient {
-///   id: String,
+///   id: &str,
 ///   stream: std::net::TcpStream
 /// }
 /// 
-/// impl Client<String, String> for TcpClient {
-///   fn get_id(&self) -> String {
+/// impl Client<&str, &str> for TcpClient {
+///   fn get_id(&self) -> &str {
 ///     return self.id;
 ///   }
 /// 
-///   fn send(&self, message: String) {
+///   fn send(&self, message: &str) {
 ///     self.stream.write(format!("Client ({}) Received: {}", self.id, message).as_bytes())
 ///   }
 /// }
@@ -76,15 +76,15 @@ impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 ///   Tcp(TcpClient)
 /// }
 /// 
-/// impl Client<String, String> for Clients {
-///   fn get_id(&self) -> String {
+/// impl Client<&str, &str> for Clients {
+///   fn get_id(&self) -> &str {
 ///     match self {
 ///       Self::Console(client) => client.get_id().to_string(),
 ///       Self::Tcp(client) => client.get_id()
 ///     }
 ///   }
 /// 
-///   fn send(&self, message: String) {
+///   fn send(&self, message: &str) {
 ///     match self {
 ///       Self::Console(client) => client.send(message),
 ///       Self::Console(client) => client.send(message)
@@ -97,7 +97,7 @@ pub trait Client<TIdentifier: UniqueIdentifier, TMessage> {
     fn get_id(&self) -> TIdentifier;
 
     /// Sends a `Message` to a `Client`.
-    fn send(&self, message: &TMessage);
+    fn send(&self, message: TMessage);
 }
 
 /// PubSubError is used for errors specific to `PubSub` (such as adding or removing `Client`s)
@@ -124,9 +124,9 @@ impl std::fmt::Display for PubSubError {
 }
 
 /// A PubSub
-pub struct PubSub<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage> {
+pub struct PubSub<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage> {
     clients: HashMap<TIdentifier, TClient>,
-    channels: HashMap<String, BTreeSet<TIdentifier>>,
+    channels: HashMap<&'a str, BTreeSet<TIdentifier>>,
     phantom: PhantomData<TMessage>
 }
 
@@ -139,13 +139,13 @@ pub struct PubSub<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIde
 /// 2. Add one or more `Clients`.
 /// 3. Subscribe the `Clients` to `Channels` of interest.
 /// 4. Publish `Messages` to the `Channels`. The `Message` is broadcast to all `Clients` subscribed to the `Channel`.
-impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage: Clone> PubSub<TClient, TIdentifier, TMessage> {
+impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage: Clone + Copy> PubSub<'a, TClient, TIdentifier, TMessage> {
     
     /// Creates a new `PubSub`
     /// 
     /// All `Clients` of the `PubSub` must use the same type of `Identifier`
     /// and receive the same type of `Message`.
-    pub fn new() -> PubSub<TClient, TIdentifier, TMessage> {
+    pub fn new() -> PubSub<'a, TClient, TIdentifier, TMessage> {
         PubSub {
             clients: HashMap::new(),
             channels: HashMap::new(),
@@ -173,7 +173,7 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
     ///
     /// Results in a `PubSubError` when a `Client` attempts to subscribe to a 
     /// `Channel` that it is already subscribed to.
-    pub fn sub_client(&mut self, client: TClient, channel: String) -> Result<(), PubSubError> {
+    pub fn sub_client(&mut self, client: TClient, channel: &'a str) -> Result<(), PubSubError> {
         let subbed_clients = self.channels.entry(channel).or_insert_with(BTreeSet::new);
 
         let result = subbed_clients.insert(client.get_id());
@@ -189,8 +189,8 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
     /// 
     /// Results in a `PubSubError` when a `Client` attempts to unsubscribe
     /// from a `Channel` it is not subscribed to.
-    pub fn unsub_client(&mut self, client: TClient, channel: String) -> Result<(), PubSubError> {
-        if let Some(subbed_clients) = self.channels.get_mut(&channel) {
+    pub fn unsub_client(&mut self, client: TClient, channel: &str) -> Result<(), PubSubError> {
+        if let Some(subbed_clients) = self.channels.get_mut(channel) {
             match subbed_clients.remove(&client.get_id()) {
                 true => Ok(()),
                 false => Err(PubSubError::ClientNotSubscribedError),
@@ -201,18 +201,20 @@ impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMes
     }
 
     /// Publishes a `Message` to all `Clients` subscribed to the provided `Channel`.
-    pub fn pub_message(&mut self, channel: String, msg: &TMessage) {
-        if let Some(subbed_clients) = self.channels.get_mut(&channel) {
+    pub fn pub_message<TInputMessage: Into<TMessage>>(&mut self, channel: &str, msg: TInputMessage) {
+        let msg_ref = msg.into();
+
+        if let Some(subbed_clients) = self.channels.get_mut(channel) {
             for token in subbed_clients.iter() {
                 if let Some(client) = self.clients.get(token) {
-                    client.send(msg);
+                    client.send(msg_ref);
                 }
             }
         }
     }
 }
 
-impl<TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage: Clone> Default for PubSub<TClient, TIdentifier, TMessage> {
+impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage: Clone + Copy> Default for PubSub<'a, TClient, TIdentifier, TMessage> {
     fn default() -> Self {
         Self::new()
     }
