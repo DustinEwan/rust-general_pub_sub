@@ -1,14 +1,18 @@
-use std::{borrow::BorrowMut, collections::{ BTreeSet, HashMap }, hash::Hash};
+use itertools::Itertools;
 use std::error::Error;
 use std::marker::PhantomData;
+use std::{
+    collections::{BTreeSet, HashMap},
+    hash::Hash,
+};
 use wildmatch::WildMatch;
 
 /// A Unique Identifier
-/// 
+///
 /// The "unique" aspect of this trait is enforced within the PubSub
 /// itself.  However, in addition to being unique, the identifier must
-/// implement (or derive) core::cmp::Ord and std::hash::Hash. 
-pub trait UniqueIdentifier: Ord + Hash {}
+/// implement (or derive) core::cmp::Ord and std::hash::Hash.
+pub trait UniqueIdentifier: Ord + Eq + Hash {}
 impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 
 /// A PubSub Client
@@ -21,7 +25,7 @@ impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 /// Message can also be of any type.
 ///
 /// # Examples
-/// 
+///
 /// Basic Usage:
 ///
 /// ```
@@ -35,48 +39,48 @@ impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 ///   }
 ///
 ///   fn send(&self, message: &str) {
-///       println!("Client ({}) Received: {}", self.id, message); 
+///       println!("Client ({}) Received: {}", self.id, message);
 ///   }
 /// }
 /// ```
-/// 
+///
 /// Multi-client Example:
-/// 
+///
 /// ```
 /// struct ConsoleClient {
 ///   id: u32
 /// }
-/// 
+///
 /// impl Client<u32, &str> for ConsoleClient {
 ///   fn get_id(&self) -> u32 {
 ///      return self.id;
 ///   }
 ///
 ///   fn send(&self, message: &str) {
-///       println!("Client ({}) Received: {}", self.id, message); 
+///       println!("Client ({}) Received: {}", self.id, message);
 ///   }
 /// }
-/// 
+///
 /// struct TcpClient {
 ///   id: &str,
 ///   stream: std::net::TcpStream
 /// }
-/// 
+///
 /// impl Client<&str, &str> for TcpClient {
 ///   fn get_id(&self) -> &str {
 ///     return self.id;
 ///   }
-/// 
+///
 ///   fn send(&self, message: &str) {
 ///     self.stream.write(format!("Client ({}) Received: {}", self.id, message).as_bytes())
 ///   }
 /// }
-/// 
+///
 /// enum Clients {
 ///   Console(ConsoleClient),
 ///   Tcp(TcpClient)
 /// }
-/// 
+///
 /// impl Client<&str, &str> for Clients {
 ///   fn get_id(&self) -> &str {
 ///     match self {
@@ -84,7 +88,7 @@ impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 ///       Self::Tcp(client) => client.get_id()
 ///     }
 ///   }
-/// 
+///
 ///   fn send(&self, message: &str) {
 ///     match self {
 ///       Self::Console(client) => client.send(message),
@@ -103,33 +107,42 @@ pub trait Client<TIdentifier: UniqueIdentifier, TMessage> {
 
 /// PubSubError is used for errors specific to `PubSub` (such as adding or removing `Client`s)
 #[derive(Debug)]
-pub enum PubSubError { 
+pub enum PubSubError {
     ClientAlreadySubscribedError,
     ClientNotSubscribedError,
     ChannelDoesNotExistError,
     ClientWithIdentifierAlreadyExistsError,
-    ClientDoesNotExistError
- }
+    ClientDoesNotExistError,
+}
 
 impl Error for PubSubError {}
 impl std::fmt::Display for PubSubError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::ClientAlreadySubscribedError => write!(f, "Client already subscribed to channel."),
+            Self::ClientAlreadySubscribedError => {
+                write!(f, "Client already subscribed to channel.")
+            }
             Self::ClientNotSubscribedError => write!(f, "Client is not subscribed to channel."),
             Self::ChannelDoesNotExistError => write!(f, "Channel does not exist."),
             Self::ClientDoesNotExistError => write!(f, "Client does not exist."),
-            Self::ClientWithIdentifierAlreadyExistsError => write!(f, "Client with that identifier already exists.")
+            Self::ClientWithIdentifierAlreadyExistsError => {
+                write!(f, "Client with that identifier already exists.")
+            }
         }
     }
 }
 
 /// A PubSub
-pub struct PubSub<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage> {
+pub struct PubSub<
+    'a,
+    TClient: Client<TIdentifier, TMessage>,
+    TIdentifier: UniqueIdentifier,
+    TMessage,
+> {
     clients: HashMap<TIdentifier, TClient>,
     channels: HashMap<&'a str, BTreeSet<TIdentifier>>,
     pattern_channels: HashMap<&'a str, BTreeSet<TIdentifier>>,
-    phantom: PhantomData<TMessage>
+    phantom: PhantomData<TMessage>,
 }
 
 fn channel_is_pattern(channel: &str) -> bool {
@@ -137,17 +150,22 @@ fn channel_is_pattern(channel: &str) -> bool {
 }
 
 /// Implementation for a `PubSub`
-/// 
+///
 /// The standard workflow for a `PubSub` is to:
-/// 
+///
 /// 1. Create a new `PubSub`.
 /// 2. Add one or more `Clients`.
 /// 3. Subscribe the `Clients` to `Channels` of interest.
 /// 4. Publish `Messages` to the `Channels`. The `Message` is broadcast to all `Clients` subscribed to the `Channel`.
-impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage: Clone + Copy> PubSub<'a, TClient, TIdentifier, TMessage> {
-    
+impl<
+        'a,
+        TClient: Client<TIdentifier, TMessage>,
+        TIdentifier: UniqueIdentifier,
+        TMessage: Clone + Copy,
+    > PubSub<'a, TClient, TIdentifier, TMessage>
+{
     /// Creates a new `PubSub`
-    /// 
+    ///
     /// All `Clients` of the `PubSub` must use the same type of `Identifier`
     /// and receive the same type of `Message`.
     pub fn new() -> PubSub<'a, TClient, TIdentifier, TMessage> {
@@ -155,7 +173,7 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
             clients: HashMap::new(),
             channels: HashMap::new(),
             pattern_channels: HashMap::new(),
-            phantom: PhantomData
+            phantom: PhantomData,
         }
     }
 
@@ -179,16 +197,19 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
         }
     }
 
-    fn get_channels_for_subscription(&mut self, channel: &'a str) -> &mut HashMap<&'a str, BTreeSet<TIdentifier>> {
+    fn get_channels_for_subscription(
+        &mut self,
+        channel: &'a str,
+    ) -> &mut HashMap<&'a str, BTreeSet<TIdentifier>> {
         match channel_is_pattern(channel) {
             true => &mut self.pattern_channels,
-            false => &mut self.channels
+            false => &mut self.channels,
         }
     }
 
     /// Subscribes a `Client` to a `Channel`.
     ///
-    /// Results in a `PubSubError` when a `Client` attempts to subscribe to a 
+    /// Results in a `PubSubError` when a `Client` attempts to subscribe to a
     /// `Channel` that it is already subscribed to.
     pub fn sub_client(&mut self, client: TClient, channel: &'a str) -> Result<(), PubSubError> {
         let target_channels = self.get_channels_for_subscription(channel);
@@ -205,7 +226,7 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
     }
 
     /// Unsubscribes a `Client` from a `Channel`
-    /// 
+    ///
     /// Results in a `PubSubError` when a `Client` attempts to unsubscribe
     /// from a `Channel` it is not subscribed to.
     pub fn unsub_client(&mut self, client: TClient, channel: &'a str) -> Result<(), PubSubError> {
@@ -222,36 +243,42 @@ impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, 
     }
 
     /// Publishes a `Message` to all `Clients` subscribed to the provided `Channel`.
-    pub fn pub_message<TInputMessage: Into<TMessage>>(&mut self, channel: &str, msg: TInputMessage) {
+    pub fn pub_message<TInputMessage: Into<TMessage>>(
+        &mut self,
+        channel: &str,
+        msg: TInputMessage,
+    ) {
         let msg_ref = msg.into();
 
-        let all_pattern_channels = self.pattern_channels.borrow_mut();
+        let pattern_client_identifiers = self
+            .pattern_channels
+            .iter()
+            .filter(|(pattern, _)| WildMatch::new(pattern) == channel)
+            .map(|(_, clients)| clients.iter())
+            .flatten();
 
-        let pattern_channels = all_pattern_channels
-                                                           .keys()
-                                                           .filter(|pattern| WildMatch::new(pattern) == channel);
-            
-         for pattern in pattern_channels {
-             if let Some(subbed_clients) = all_pattern_channels.get(pattern) {
-                 for identifier in subbed_clients.iter() {
-                     if let Some(client) = self.clients.get(identifier) {
-                         client.send(msg_ref);
-                     }
-                 }
-             }
-         }
+        let subbed_clients = self.channels.get_mut(channel);
+        let subbed_client_identifiers = subbed_clients.iter().map(|client| client.iter()).flatten();
 
-        if let Some(subbed_clients) = self.channels.get_mut(channel) {
-            for identifier in subbed_clients.iter() {
-                if let Some(client) = self.clients.get(identifier) {
-                    client.send(msg_ref);
-                }
+        let unique_client_identifiers = subbed_client_identifiers
+            .chain(pattern_client_identifiers)
+            .unique();
+
+        for identifier in unique_client_identifiers {
+            if let Some(client) = self.clients.get(identifier) {
+                client.send(msg_ref);
             }
         }
     }
 }
 
-impl<'a, TClient: Client<TIdentifier, TMessage>, TIdentifier: UniqueIdentifier, TMessage: Clone + Copy> Default for PubSub<'a, TClient, TIdentifier, TMessage> {
+impl<
+        'a,
+        TClient: Client<TIdentifier, TMessage>,
+        TIdentifier: UniqueIdentifier,
+        TMessage: Clone + Copy,
+    > Default for PubSub<'a, TClient, TIdentifier, TMessage>
+{
     fn default() -> Self {
         Self::new()
     }
