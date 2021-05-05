@@ -1,10 +1,10 @@
-use general_pub_sub::{Client, PubSub, PubSubError};
+use general_pub_sub::{Client, PubSub};
 use std::{
     io::BufRead,
-    net::{Shutdown, TcpListener, TcpStream},
+    net::{TcpListener, TcpStream},
 };
 use std::{
-    io::{BufReader, Read, Write},
+    io::{BufReader, Write},
     net::SocketAddr,
 };
 
