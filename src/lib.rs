@@ -102,7 +102,7 @@ pub trait Client<TIdentifier: UniqueIdentifier, TMessage> {
     fn get_id(&self) -> TIdentifier;
 
     /// Sends a `Message` to a `Client`.
-    fn send(&self, message: TMessage);
+    fn send(&mut self, message: TMessage);
 }
 
 /// PubSubError is used for errors specific to `PubSub` (such as adding or removing `Client`s)
@@ -133,6 +133,7 @@ impl std::fmt::Display for PubSubError {
 }
 
 /// A PubSub
+#[derive(Clone)]
 pub struct PubSub<
     'a,
     TClient: Client<TIdentifier, TMessage>,
@@ -265,7 +266,7 @@ impl<
             .unique();
 
         for identifier in unique_client_identifiers {
-            if let Some(client) = self.clients.get(identifier) {
+            if let Some(client) = self.clients.get_mut(identifier) {
                 client.send(msg_ref);
             }
         }
