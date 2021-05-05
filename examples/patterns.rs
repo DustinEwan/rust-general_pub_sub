@@ -16,7 +16,7 @@ impl Client<u32, &str> for BasicClient {
         self.id
     }
 
-    fn send(&self, message: &str) {
+    fn send(&mut self, message: &str) {
         println!("Client ({}) Received: {}", self.id, message);
     }
 }
