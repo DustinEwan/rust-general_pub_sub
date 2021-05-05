@@ -1,6 +1,6 @@
 [package]
 name = "general_pub_sub"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["Dustin Ewan <dustineewan@gmail.com>"]
 edition = "2018"
 repository = "https://github.com/DustinEwan/rust-general_pub_sub"
