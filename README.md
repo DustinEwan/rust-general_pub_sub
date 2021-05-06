@@ -69,7 +69,7 @@ PubSub is an increasingly commonly used pattern for scaling out applications.  H
 
 All of the pros / cons of PubSub are beyond the scope of this readme, but the basic gist can be found on the [Publish-Subscribe Pattern Wikipedia Page](https://en.wikipedia.org/wiki/Publish%E2%80%93subscribe_pattern).
 
-My goal with this library is to provide an implementation that is, above all, fast, but is all flexible and **easy to use**.
+My goal with this library is to provide an implementation that is, above all, fast, and is also flexible and **easy to use**.
 
 
 <!-- GETTING STARTED -->
