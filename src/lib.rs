@@ -15,6 +15,11 @@ use wildmatch::WildMatch;
 pub trait UniqueIdentifier: Ord + Eq + Hash {}
 impl<TIdentifier: Ord + Hash> UniqueIdentifier for TIdentifier {}
 
+pub struct Message<'a, TMessage> {
+    pub contents: TMessage,
+    pub source: &'a str,
+}
+
 /// A PubSub Client
 ///
 /// Trait describing a generic PubSub Client.
@@ -102,7 +107,7 @@ pub trait Client<TIdentifier: UniqueIdentifier, TMessage> {
     fn get_id(&self) -> TIdentifier;
 
     /// Sends a `Message` to a `Client`.
-    fn send(&mut self, message: TMessage);
+    fn send(&mut self, message: &Message<TMessage>);
 }
 
 /// PubSubError is used for errors specific to `PubSub` (such as adding or removing `Client`s)
@@ -251,6 +256,11 @@ impl<
     ) {
         let msg_ref = msg.into();
 
+        let message = Message {
+            contents: msg_ref,
+            source: channel,
+        };
+
         let pattern_client_identifiers = self
             .pattern_channels
             .iter()
@@ -267,7 +277,7 @@ impl<
 
         for identifier in unique_client_identifiers {
             if let Some(client) = self.clients.get_mut(identifier) {
-                client.send(msg_ref);
+                client.send(&message);
             }
         }
     }
